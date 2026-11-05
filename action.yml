@@ -1,0 +1,76 @@
+name: 'Canada Accessibility Scanner'
+description: 'WCAG scan with Canadian compliance mapping (Accessible Canada Act / EN 301 549, AODA, Québec SGQRI 008) and official-languages checks.'
+author: 'canada-a11y-scanner'
+branding:
+  icon: 'check-circle'
+  color: 'red'
+inputs:
+  urls:
+    description: 'URLs to scan (space or newline separated). A sitemap.xml URL is also accepted.'
+    required: true
+  profile:
+    description: 'aca | aoda | quebec | wcag22'
+    default: 'aca'
+  max-pages:
+    description: 'Maximum pages to crawl on the same site'
+    default: '10'
+  fail-on:
+    description: 'Fail the job on violations at/above: critical | serious | moderate | minor | none'
+    default: 'serious'
+  report-lang:
+    description: 'HTML report language: en | fr'
+    default: 'en'
+  output-dir:
+    description: 'Directory for reports'
+    default: 'a11y-report'
+  best-practice:
+    description: 'Also run axe-core best-practice rules (true/false)'
+    default: 'false'
+  upload-artifact:
+    description: 'Upload the reports as a workflow artifact (true/false)'
+    default: 'true'
+outputs:
+  score:
+    description: 'Automated accessibility score (0-100)'
+    value: ${{ steps.scan.outputs.score }}
+  violations:
+    description: 'Number of failing elements'
+    value: ${{ steps.scan.outputs.violations }}
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install scanner
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --omit=dev --no-audit --no-fund
+        npx playwright install --with-deps chromium
+    - name: Run accessibility scan
+      id: scan
+      shell: bash
+      env:
+        URLS: ${{ inputs.urls }}
+        PROFILE: ${{ inputs.profile }}
+        MAX_PAGES: ${{ inputs.max-pages }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        REPORT_LANG: ${{ inputs.report-lang }}
+        OUT_DIR: ${{ inputs.output-dir }}
+        BEST_PRACTICE: ${{ inputs.best-practice }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        EXTRA=()
+        [ "$BEST_PRACTICE" = "true" ] && EXTRA+=(--best-practice)
+        # shellcheck disable=SC2086
+        node "$ACTION_PATH/bin/ca11y.js" scan $URLS \
+          --profile "$PROFILE" --max-pages "$MAX_PAGES" --fail-on "$FAIL_ON" \
+          --lang "$REPORT_LANG" --out "$OUT_DIR" "${EXTRA[@]}"
+    - name: Upload report
+      if: always() && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: accessibility-report
+        path: ${{ inputs.output-dir }}
+        if-no-files-found: ignore

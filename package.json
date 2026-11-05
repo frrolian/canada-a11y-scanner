@@ -1,0 +1,38 @@
+{
+  "name": "canada-a11y-scanner",
+  "version": "1.0.0",
+  "description": "Website accessibility scanner (WCAG 2.x) with Canadian compliance mapping: Accessible Canada Act (CAN/ASC-EN 301 549), AODA, Quebec SGQRI 008, and official-languages checks.",
+  "type": "module",
+  "bin": {
+    "ca11y": "bin/ca11y.js"
+  },
+  "main": "src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "action.yml"
+  ],
+  "scripts": {
+    "start": "node bin/ca11y.js serve",
+    "scan": "node bin/ca11y.js scan",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "wcag",
+    "aoda",
+    "accessible-canada-act",
+    "en-301-549",
+    "axe-core",
+    "canada"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axe-core": "^4.14.0",
+    "playwright": "^1.63.0"
+  }
+}

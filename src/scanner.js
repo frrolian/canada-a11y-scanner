@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
 import { PROFILES, FRAMEWORKS, WCAG_SC, tagToSc, frameworksForSc } from './standards.js';
 import { collectPageSignals, evaluatePage, evaluateSite } from './canada-checks.js';
+import { detectPlatformInPage, describeElementsInPage, PLATFORMS } from './platform.js';
 
 const require = createRequire(import.meta.url);
 const AXE_SOURCE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
@@ -50,7 +51,7 @@ export async function scan(opts) {
   const standards = [...new Set(opts.standards?.length ? opts.standards : opts.profile ? [opts.profile] : Object.keys(PROFILES))];
   for (const s of standards) if (!PROFILES[s]) throw new Error(`Unknown standard "${s}". Use any of: ${Object.keys(PROFILES).join(', ')}`);
   const maxPages = opts.maxPages ?? 1;
-  const timeout = opts.timeout ?? 30000;
+  const timeout = opts.timeout ?? 45000;
   const log = opts.onProgress || (() => {});
   // Run the rules for every chosen standard in one pass, so each one is reported accurately.
   const axeTags = [...new Set(standards.flatMap((s) => PROFILES[s].axeTags)), ...(opts.bestPractice ? ['best-practice'] : [])];
@@ -69,10 +70,16 @@ export async function scan(opts) {
   if (opts.executablePath) launch.executablePath = opts.executablePath;
   const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
   if (proxy) launch.proxy = { server: proxy, bypass: process.env.NO_PROXY || process.env.no_proxy || '127.0.0.1,localhost' };
+  // Docker/cloud hosts have a tiny /dev/shm; without this flag Chromium can hang or crash.
+  launch.args = ['--disable-dev-shm-usage'];
   const browser = await chromium.launch(launch);
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-CA', ignoreHTTPSErrors: !!opts.ignoreHttpsErrors });
+  // Some sites block "HeadlessChrome". Use the normal Chrome user agent and say who we are.
+  const ua = (await browser.newPage().then(async (p) => { const v = await p.evaluate(() => navigator.userAgent); await p.close(); return v; }))
+    .replace('HeadlessChrome', 'Chrome') + ' CanadaA11yScanner/1.0';
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-CA', userAgent: ua, ignoreHTTPSErrors: !!opts.ignoreHttpsErrors });
   const pages = [];
   const pageFlags = [];
+  let detected = null;
   const started = new Date();
 
   try {
@@ -83,10 +90,22 @@ export async function scan(opts) {
       const page = await context.newPage();
       const result = { url, title: '', status: null, error: null, issues: [] };
       try {
-        const resp = await page.goto(url, { waitUntil: 'load', timeout });
+        // Wait for the page's HTML, not for every image, ad and tracker to finish.
+        let resp = null;
+        try {
+          resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+        } catch (err) {
+          // Timed out, but if some of the page has arrived, scan what we have.
+          const hasContent = await page.evaluate(() => !!document.body && document.body.innerHTML.trim().length > 0).catch(() => false);
+          if (!/Timeout/i.test(err.message) || !hasContent) throw err;
+          result.partial = true;
+          log('  ~ page was still loading after the time limit; scanning what loaded');
+        }
         result.status = resp?.status() ?? null;
         if (result.status >= 400) throw new Error(`HTTP ${result.status}`);
-        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+        // Give scripts and styles a little time to finish, without waiting forever.
+        await page.waitForLoadState('load', { timeout: 10000 }).catch(() => {});
+        await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
         result.title = await page.title();
         result.url = page.url();
 
@@ -102,6 +121,11 @@ export async function scan(opts) {
         const { issues, flags } = evaluatePage(signals);
         result.issues.push(...issues);
         pageFlags.push(flags);
+
+        // Which website builder made this site? The first page that loads decides.
+        if (!detected) detected = await page.evaluate(detectPlatformInPage).catch(() => null);
+        // Describe each problem element in plain words, and take small pictures of them.
+        await addContext(page, result.issues, opts.screenshots !== false).catch((e) => log(`  ~ could not describe elements: ${e.message.split('\n')[0]}`));
 
         if (crawl) {
           for (const l of signals.links) {
@@ -128,10 +152,61 @@ export async function scan(opts) {
   }
 
   const siteIssues = pageFlags.length ? evaluateSite(pageFlags).map(enrich) : [];
-  return buildReport({ pages, siteIssues, standards, axeTags, started });
+  const chosen = opts.platform && opts.platform !== 'auto' && PLATFORMS[opts.platform] ? opts.platform : null;
+  const platform = chosen
+    ? { id: chosen, version: detected?.id === chosen ? detected.version : null, builder: detected?.id === chosen ? detected.builder : null, source: 'chosen', detected: detected?.id || 'unknown' }
+    : { ...(detected || { id: 'unknown', version: null, builder: null }), source: 'auto' };
+  return buildReport({ pages, siteIssues, standards, axeTags, started, platform });
 }
 
-export function buildReport({ pages, siteIssues, standards, axeTags, started }) {
+const SHOTS_PER_PAGE = 24;
+const SHOTS_PER_ISSUE = 3;
+
+async function addContext(page, issues, screenshots) {
+  const selectors = new Set();
+  for (const i of issues) for (const n of i.nodes) {
+    const t = n.target;
+    if (Array.isArray(t) && t.length === 1 && typeof t[0] === 'string' && t[0] !== 'site') selectors.add(t[0]);
+  }
+  if (!selectors.size) return;
+  const desc = await page.evaluate(describeElementsInPage, [...selectors]);
+  for (const i of issues) for (const n of i.nodes) {
+    const sel = Array.isArray(n.target) && n.target.length === 1 ? n.target[0] : null;
+    if (sel && desc[sel]) n.where = desc[sel];
+  }
+  if (!screenshots) return;
+  let budget = SHOTS_PER_PAGE;
+  const ordered = [...issues].sort((a, b) => (a.type === 'violation' ? 0 : 1) - (b.type === 'violation' ? 0 : 1));
+  for (const i of ordered) {
+    let perIssue = SHOTS_PER_ISSUE;
+    for (const n of i.nodes) {
+      if (budget <= 0) return;
+      if (perIssue <= 0) break;
+      const sel = Array.isArray(n.target) && n.target.length === 1 ? n.target[0] : null;
+      if (!sel || sel === 'html' || sel === 'site' || n.where?.kind === 'page') continue;
+      try {
+        const loc = page.locator(sel).first();
+        await loc.scrollIntoViewIfNeeded({ timeout: 2000 });
+        const box = await loc.boundingBox({ timeout: 2000 });
+        if (!box || box.width < 2 || box.height < 2) continue;
+        const vp = page.viewportSize();
+        const pad = 10;
+        const x = Math.max(0, box.x - pad); const y = Math.max(0, box.y - pad);
+        const width = Math.min(vp.width - x, box.width + pad * 2, 900);
+        const height = Math.min(vp.height - y, box.height + pad * 2, 360);
+        if (width < 4 || height < 4) continue;
+        // Highlight the element while we take the picture
+        const undo = await loc.evaluate((el) => { const o = el.style.outline; const oo = el.style.outlineOffset; el.style.outline = '3px solid #d4351c'; el.style.outlineOffset = '2px'; return [o, oo]; });
+        const buf = await page.screenshot({ clip: { x, y, width, height }, type: 'jpeg', quality: 60, timeout: 3000, animations: 'disabled' });
+        await loc.evaluate((el, [o, oo]) => { el.style.outline = o; el.style.outlineOffset = oo; }, undo).catch(() => {});
+        n.shot = `data:image/jpeg;base64,${buf.toString('base64')}`;
+        budget--; perIssue--;
+      } catch { /* element hidden, detached or offscreen: skip the picture */ }
+    }
+  }
+}
+
+export function buildReport({ pages, siteIssues, standards, axeTags, started, platform = { id: 'unknown', source: 'auto' } }) {
   const all = [...pages.flatMap((p) => p.issues), ...siteIssues];
   const violations = all.filter((i) => i.type === 'violation');
   const reviews = all.filter((i) => i.type === 'review');
@@ -160,6 +235,7 @@ export function buildReport({ pages, siteIssues, standards, axeTags, started }) 
     tool: 'canada-a11y-scanner',
     version: '1.0.0',
     standards,
+    platform,
     profile: standards.join(','),
     primaryFramework: PROFILES[standards[0]].framework,
     axeTags,

@@ -18,6 +18,7 @@ Scan options:
                             aoda   = Ontario AODA (WCAG 2.0 AA)
                             quebec = Québec SGQRI 008 (WCAG 2.0 AA)
                             wcag22 = WCAG 2.2 AA
+      --platform <id>     auto | squarespace | wix | wordpress | shopify | webflow | ai | custom  (default: auto)
   -m, --max-pages <n>     Crawl same-site links up to n pages (default: 1)
   -o, --out <dir>         Output directory (default: a11y-report)
   -f, --format <list>     html,json,md  (default: html,json,md)
@@ -64,7 +65,7 @@ if (cmd === 'serve') {
   if (!urls.length) { console.error('Error: provide at least one URL.\n'); console.log(HELP); process.exit(2); }
   try {
     const report = await scan({
-      urls, standards: (args.standards || args.profile || '').split(',').map((x) => x.trim()).filter(Boolean), maxPages: Math.max(args.maxPages, urls.length), bestPractice: args.bestPractice,
+      urls, platform: args.platform || 'auto', standards: (args.standards || args.profile || '').split(',').map((x) => x.trim()).filter(Boolean), maxPages: Math.max(args.maxPages, urls.length), bestPractice: args.bestPractice,
       timeout: Number(args.timeout || 30000), ignoreHttpsErrors: process.env.CA11Y_IGNORE_HTTPS_ERRORS === '1', executablePath: process.env.CHROMIUM_PATH,
       onProgress: (m) => console.error(m),
     });

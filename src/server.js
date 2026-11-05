@@ -17,6 +17,8 @@ const T = {
     intro: 'Check a website for accessibility barriers. Results are matched to the Accessible Canada Act, Ontario\'s AODA, Québec\'s accessibility standard and WCAG.',
     other: 'Français', otherLang: 'fr',
     url: 'Website address', urlHint: 'Example: canada.ca or https://www.example.com',
+    platformQ: 'What was the website built with?', platformHint: 'We detect this automatically. Change it only if the detection is wrong.',
+    platforms: { auto: 'Detect automatically', squarespace: 'Squarespace', wix: 'Wix', wordpress: 'WordPress', shopify: 'Shopify', webflow: 'Webflow', ai: 'An AI builder (Lovable, Bolt, v0…)', custom: 'Custom code', unknown: 'Other / not sure' },
     profile: 'Which standards should we check?', profileHint: 'Choose one or more. All are checked in a single scan.',
     profiles: {
       aca: ['Accessible Canada Act', 'Federal rules. Uses WCAG 2.1 AA (EN 301 549). Recommended for most sites.'],
@@ -60,6 +62,8 @@ const T = {
     intro: "Vérifiez si un site Web présente des obstacles à l'accessibilité. Les résultats sont associés à la Loi canadienne sur l'accessibilité, à la LAPHO de l'Ontario, au standard du Québec et aux WCAG.",
     other: 'English', otherLang: 'en',
     url: 'Adresse du site Web', urlHint: 'Exemple : canada.ca ou https://www.exemple.com',
+    platformQ: 'Avec quoi le site a-t-il été créé?', platformHint: 'Nous le détectons automatiquement. Changez-le seulement si la détection est erronée.',
+    platforms: { auto: 'Détecter automatiquement', squarespace: 'Squarespace', wix: 'Wix', wordpress: 'WordPress', shopify: 'Shopify', webflow: 'Webflow', ai: 'Un outil IA (Lovable, Bolt, v0…)', custom: 'Code sur mesure', unknown: 'Autre / je ne sais pas' },
     profile: 'Quelles normes voulez-vous vérifier?', profileHint: 'Choisissez-en une ou plusieurs. Toutes sont vérifiées en une seule analyse.',
     profiles: {
       aca: ["Loi canadienne sur l'accessibilité", 'Règles fédérales. Utilise les WCAG 2.1 AA (EN 301 549). Recommandé pour la plupart des sites.'],
@@ -117,6 +121,7 @@ label,legend{display:block;font-weight:700;font-size:1.1rem;margin-bottom:4px;pa
 .hint{color:var(--muted);margin:0 0 8px;font-size:1rem}
 input[type=text],input[type=number]{width:100%;min-height:48px;padding:10px 12px;font:inherit;color:var(--fg);background:var(--field);border:2px solid var(--line);border-radius:6px}
 input[type=number]{max-width:8em}
+select{width:100%;max-width:28em;min-height:48px;padding:10px 12px;font:inherit;color:var(--fg);background:var(--field);border:2px solid var(--line);border-radius:6px}
 fieldset{border:0;margin:0;padding:0}
 .choice{display:flex;gap:12px;align-items:flex-start;padding:12px;border:2px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;background:var(--field)}
 .choice:has(input:checked){border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
@@ -160,7 +165,8 @@ ${switchHref !== null ? `<a href="${esc(switchHref || `/?lang=${t.otherLang}`)}"
 
 function formPage(lang, values = {}, errors = {}) {
   const t = T[lang];
-  const v = { url: '', standards: Object.keys(T.en.profiles), pages: '3', reportLang: lang, ...values };
+  const v = { url: '', standards: Object.keys(T.en.profiles), pages: '3', reportLang: lang, platform: 'auto', ...values };
+  const platformOpts = Object.entries(t.platforms).map(([id, name]) => `<option value="${id}" ${v.platform === id ? 'selected' : ''}>${esc(name)}</option>`).join('');
   const errList = Object.entries(errors);
   const summary = errList.length ? `<div class="error-summary" role="alert" tabindex="-1" id="error-summary" aria-labelledby="error-title">
     <h2 id="error-title">${t.errSummary}</h2><ul>${errList.map(([k, m]) => `<li><a href="#${k === 'busy' ? 'url' : k}">${esc(m)}</a></li>`).join('')}</ul></div>` : '';
@@ -175,6 +181,8 @@ function formPage(lang, values = {}, errors = {}) {
 <input type="hidden" name="lang" value="${lang}">
 <div class="field"><label for="url">${t.url}</label><p class="hint" id="url-hint">${esc(t.urlHint)}</p>${fieldErr('url')}
 <input type="text" id="url" name="url" inputmode="url" autocomplete="url" spellcheck="false" autocapitalize="none" value="${esc(v.url)}" aria-describedby="${desc('url')}" ${errors.url ? 'aria-invalid="true"' : ''}></div>
+<div class="field"><label for="platform">${t.platformQ}</label><p class="hint" id="platform-hint">${esc(t.platformHint)}</p>
+<select id="platform" name="platform" aria-describedby="platform-hint">${platformOpts}</select></div>
 <div class="field"><fieldset id="standards"><legend>${t.profile}</legend><p class="hint">${esc(t.profileHint)}</p>${fieldErr('standards')}${profiles}</fieldset></div>
 <div class="field"><label for="pages">${t.pages}</label><p class="hint" id="pages-hint">${esc(t.pagesHint)}</p>${fieldErr('pages')}
 <input type="number" id="pages" name="pages" min="1" max="${MAX_PAGES}" value="${esc(v.pages)}" aria-describedby="${desc('pages')}" ${errors.pages ? 'aria-invalid="true"' : ''}></div>
@@ -269,11 +277,26 @@ function reportNav(job, rl, origin) {
   <p class="note">${t.emailNote}</p>
   <form action="/scan" method="post" class="rescan">
     <input type="hidden" name="url" value="${esc(job.url)}"><input type="hidden" name="pages" value="${job.maxPages}">
-    <input type="hidden" name="lang" value="${rl}"><input type="hidden" name="reportLang" value="${rl}">
+    <input type="hidden" name="lang" value="${rl}"><input type="hidden" name="reportLang" value="${rl}"><input type="hidden" name="platform" value="${esc(job.platform || 'auto')}">
     <fieldset><legend>${t.rescanLabel}</legend><span class="checks">${opts}</span></fieldset>
     <p><button type="submit" class="btn">${t.rescan}</button></p>
   </form>
 </div>`;
+}
+
+function friendlyError(raw, lang) {
+  const fr = lang === 'fr';
+  const why =
+    /Timeout/i.test(raw) ? (fr ? "Le site a mis trop de temps à répondre. Il est peut-être lent, en panne ou bloque les outils automatisés. Réessayez, ou essayez une autre page du site." : 'The website took too long to respond. It may be slow, down, or blocking automated tools. Try again, or try a different page on the site.')
+    : /ERR_NAME_NOT_RESOLVED/i.test(raw) ? (fr ? "Cette adresse n'existe pas. Vérifiez l'orthographe." : 'This address does not exist. Check the spelling.')
+    : /ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED/i.test(raw) ? (fr ? "Le site a refusé la connexion. Il est peut-être en panne." : 'The website refused the connection. It may be down.')
+    : /ERR_CERT|SSL/i.test(raw) ? (fr ? "Le certificat de sécurité du site n'est pas valide." : "The website's security certificate is not valid.")
+    : /HTTP 40[13]/.test(raw) ? (fr ? "Le site exige une connexion ou bloque les outils automatisés." : 'The website needs a login or is blocking automated tools.')
+    : /HTTP 404/.test(raw) ? (fr ? "Cette page est introuvable (erreur 404)." : 'This page was not found (error 404).')
+    : /HTTP 5\d\d/.test(raw) ? (fr ? "Le site a une erreur de serveur. Réessayez plus tard." : 'The website has a server error. Try again later.')
+    : '';
+  const lead = fr ? "Impossible d'ouvrir le site." : 'Could not open the website.';
+  return why ? `${lead} ${why}` : `${lead} ${raw}`;
 }
 
 // ---------- job queue (one scan at a time) ----------
@@ -291,14 +314,14 @@ async function worker(executablePath) {
   job.state = 'running';
   try {
     job.report = await scan({
-      urls: [job.url], standards: job.standards, maxPages: job.maxPages, executablePath,
+      urls: [job.url], standards: job.standards, platform: job.platform, maxPages: job.maxPages, executablePath,
       onProgress: (m) => console.log(`[${job.id.slice(0, 8)}] ${m}`),
       onPage: ({ current, url }) => { job.current = current; job.max = job.maxPages; job.currentUrl = url; },
     });
     job.building = true;
     if (job.report.summary.pagesWithErrors === job.report.summary.pagesScanned) {
       const first = job.report.pages[0]?.error || '';
-      throw new Error(job.lang === 'fr' ? `Impossible d'ouvrir le site. ${first}` : `Could not open the website. ${first}`);
+      throw new Error(friendlyError(first, job.lang));
     }
     job.state = 'done';
   } catch (e) {
@@ -350,7 +373,7 @@ export function startServer({ port = 3000, host = '127.0.0.1', executablePath } 
       const p = await readBody(req);
       const l = p.get('lang') === 'fr' ? 'fr' : 'en';
       const t = T[l];
-      const values = { url: p.get('url') || '', standards: [...new Set([...p.getAll('standards'), ...p.getAll('profile')])].filter((x) => T.en.profiles[x]), pages: p.get('pages') || '', reportLang: p.get('reportLang') === 'fr' ? 'fr' : 'en' };
+      const values = { url: p.get('url') || '', standards: [...new Set([...p.getAll('standards'), ...p.getAll('profile')])].filter((x) => T.en.profiles[x]), platform: T.en.platforms[p.get('platform')] ? p.get('platform') : 'auto', pages: p.get('pages') || '', reportLang: p.get('reportLang') === 'fr' ? 'fr' : 'en' };
       const errors = {};
       const nu = normalizeUrl(values.url);
       if (nu.error) errors.url = t[nu.error];
@@ -360,7 +383,7 @@ export function startServer({ port = 3000, host = '127.0.0.1', executablePath } 
       if (!Object.keys(errors).length && pending.length >= MAX_QUEUE) errors.busy = t.errBusy;
       if (Object.keys(errors).length) return send(errors.busy ? 503 : 400, formPage(l, values, errors));
 
-      const job = { id: randomUUID(), url: nu.url, standards: values.standards, maxPages: n, lang: l, reportLang: values.reportLang, state: 'queued', created: Date.now() };
+      const job = { id: randomUUID(), url: nu.url, standards: values.standards, platform: values.platform, maxPages: n, lang: l, reportLang: values.reportLang, state: 'queued', created: Date.now() };
       jobs.set(job.id, job);
       pending.push(job);
       worker(executablePath);
@@ -383,7 +406,7 @@ export function startServer({ port = 3000, host = '127.0.0.1', executablePath } 
       const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
       if (checkLimits(ip)) return json(429, { error: T[al].aiLimit });
       try {
-        const answer = await askAi({ issue, pageUrl: page?.url || job.url, question: String(body.question || ''), lang: al });
+        const answer = await askAi({ issue, pageUrl: page?.url || job.url, question: String(body.question || ''), lang: al, platform: job.report.platform });
         return json(200, { answer });
       } catch (e) {
         console.error('AI error:', e.message);

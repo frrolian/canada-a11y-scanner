@@ -8,9 +8,12 @@ inputs:
   urls:
     description: 'URLs to scan (space or newline separated). A sitemap.xml URL is also accepted.'
     required: true
+  standards:
+    description: 'Comma-separated standards to check: aca, aoda, quebec, wcag22'
+    default: 'aca,aoda,quebec,wcag22'
   profile:
-    description: 'aca | aoda | quebec | wcag22'
-    default: 'aca'
+    description: '(Older option) a single standard. Overrides standards when set.'
+    default: ''
   max-pages:
     description: 'Maximum pages to crawl on the same site'
     default: '10'
@@ -54,6 +57,7 @@ runs:
       env:
         URLS: ${{ inputs.urls }}
         PROFILE: ${{ inputs.profile }}
+        STANDARDS: ${{ inputs.standards }}
         MAX_PAGES: ${{ inputs.max-pages }}
         FAIL_ON: ${{ inputs.fail-on }}
         REPORT_LANG: ${{ inputs.report-lang }}
@@ -65,7 +69,7 @@ runs:
         [ "$BEST_PRACTICE" = "true" ] && EXTRA+=(--best-practice)
         # shellcheck disable=SC2086
         node "$ACTION_PATH/bin/ca11y.js" scan $URLS \
-          --profile "$PROFILE" --max-pages "$MAX_PAGES" --fail-on "$FAIL_ON" \
+          --standards "${PROFILE:-$STANDARDS}" --max-pages "$MAX_PAGES" --fail-on "$FAIL_ON" \
           --lang "$REPORT_LANG" --out "$OUT_DIR" "${EXTRA[@]}"
     - name: Upload report
       if: always() && inputs.upload-artifact == 'true'

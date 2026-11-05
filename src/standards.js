@@ -65,7 +65,7 @@ export const FRAMEWORKS = {
   aca: {
     id: 'aca',
     short: 'ACA / EN 301 549',
-    name: 'Accessible Canada Act — CAN/ASC-EN 301 549:2024 (WCAG 2.1 AA, clause 9)',
+    name: 'Accessible Canada Act: CAN/ASC-EN 301 549:2024 (WCAG 2.1 AA, clause 9)',
     jurisdiction: 'Federal (federally regulated organizations & Government of Canada)',
     wcag: 'WCAG 2.1 AA',
     includes: (sc) => ['2.0', '2.1'].includes(WCAG_SC[sc]?.v),
@@ -75,7 +75,7 @@ export const FRAMEWORKS = {
   aoda: {
     id: 'aoda',
     short: 'AODA',
-    name: 'Ontario AODA — IASR O. Reg. 191/11, s.14 (WCAG 2.0 AA, excl. 1.2.4 & 1.2.5)',
+    name: 'Ontario AODA: IASR O. Reg. 191/11, s.14 (WCAG 2.0 AA, excl. 1.2.4 and 1.2.5)',
     jurisdiction: 'Ontario',
     wcag: 'WCAG 2.0 AA',
     includes: (sc) => WCAG_SC[sc]?.v === '2.0' && !['1.2.4', '1.2.5'].includes(sc),
@@ -84,7 +84,7 @@ export const FRAMEWORKS = {
   quebec: {
     id: 'quebec',
     short: 'Québec SGQRI 008',
-    name: 'Québec — Standard SGQRI 008 2.0 (based on WCAG 2.0 AA)',
+    name: 'Québec: Standard SGQRI 008 2.0 (based on WCAG 2.0 AA)',
     jurisdiction: 'Québec public bodies',
     wcag: 'WCAG 2.0 AA',
     includes: (sc) => WCAG_SC[sc]?.v === '2.0',

@@ -39,20 +39,21 @@ async function sitemapUrls(url) {
  * Scan one or more URLs.
  * @param {object} opts
  * @param {string[]} opts.urls          start URLs (or a sitemap.xml)
- * @param {string}   [opts.profile]     aca | aoda | quebec | wcag22
+ * @param {string[]} [opts.standards]   any of aca, aoda, quebec, wcag22 (default: all four)
+ * @param {string}   [opts.profile]     single standard (older option, same as standards: [profile])
  * @param {number}   [opts.maxPages]    crawl limit (1 = no crawling)
  * @param {boolean}  [opts.bestPractice] include axe best-practice rules
  * @param {number}   [opts.timeout]     navigation timeout ms
  * @param {function} [opts.onProgress]  (msg) => void
  */
 export async function scan(opts) {
-  const profileId = opts.profile || 'aca';
-  const profile = PROFILES[profileId];
-  if (!profile) throw new Error(`Unknown profile "${profileId}". Use one of: ${Object.keys(PROFILES).join(', ')}`);
+  const standards = [...new Set(opts.standards?.length ? opts.standards : opts.profile ? [opts.profile] : Object.keys(PROFILES))];
+  for (const s of standards) if (!PROFILES[s]) throw new Error(`Unknown standard "${s}". Use any of: ${Object.keys(PROFILES).join(', ')}`);
   const maxPages = opts.maxPages ?? 1;
   const timeout = opts.timeout ?? 30000;
   const log = opts.onProgress || (() => {});
-  const axeTags = [...profile.axeTags, ...(opts.bestPractice ? ['best-practice'] : [])];
+  // Run the rules for every chosen standard in one pass, so each one is reported accurately.
+  const axeTags = [...new Set(standards.flatMap((s) => PROFILES[s].axeTags)), ...(opts.bestPractice ? ['best-practice'] : [])];
 
   let queue = [];
   for (const u of opts.urls) {
@@ -78,6 +79,7 @@ export async function scan(opts) {
     while (queue.length && pages.length < maxPages) {
       const url = queue.shift();
       log(`Scanning ${url}`);
+      opts.onPage?.({ current: pages.length + 1, max: Math.min(maxPages, pages.length + 1 + queue.length), maxPages, url });
       const page = await context.newPage();
       const result = { url, title: '', status: null, error: null, issues: [] };
       try {
@@ -126,10 +128,10 @@ export async function scan(opts) {
   }
 
   const siteIssues = pageFlags.length ? evaluateSite(pageFlags).map(enrich) : [];
-  return buildReport({ pages, siteIssues, profileId, axeTags, started });
+  return buildReport({ pages, siteIssues, standards, axeTags, started });
 }
 
-export function buildReport({ pages, siteIssues, profileId, axeTags, started }) {
+export function buildReport({ pages, siteIssues, standards, axeTags, started }) {
   const all = [...pages.flatMap((p) => p.issues), ...siteIssues];
   const violations = all.filter((i) => i.type === 'violation');
   const reviews = all.filter((i) => i.type === 'review');
@@ -140,7 +142,7 @@ export function buildReport({ pages, siteIssues, profileId, axeTags, started }) 
   // Which success criteria fail, per framework
   const scannedOk = pages.some((p) => !p.error);
   const failingSc = new Set(violations.flatMap((v) => v.wcag));
-  const frameworks = Object.values(FRAMEWORKS).map((fw) => {
+  const frameworks = standards.map((id) => FRAMEWORKS[PROFILES[id].framework]).map((fw) => {
     const failing = [...failingSc].filter((sc) => fw.includes(sc)).sort(scSort);
     return {
       id: fw.id, short: fw.short, name: fw.name, jurisdiction: fw.jurisdiction, wcag: fw.wcag,
@@ -157,8 +159,9 @@ export function buildReport({ pages, siteIssues, profileId, axeTags, started }) 
   return {
     tool: 'canada-a11y-scanner',
     version: '1.0.0',
-    profile: profileId,
-    primaryFramework: PROFILES[profileId].framework,
+    standards,
+    profile: standards.join(','),
+    primaryFramework: PROFILES[standards[0]].framework,
     axeTags,
     startedAt: started.toISOString(),
     finishedAt: new Date().toISOString(),

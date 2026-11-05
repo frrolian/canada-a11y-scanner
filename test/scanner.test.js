@@ -50,6 +50,13 @@ test('bad page produces WCAG and Canada findings', { timeout: 60000 }, async () 
   assert.equal(r.frameworks.find((f) => f.id === 'aca').status, 'fail');
   assert.ok(shouldFail(r, 'serious'));
   assert.match(toHtml(r, 'fr'), /Rapport d'accessibilité/);
+  assert.match(toHtml(r, 'en'), /How to fix/);
+  assert.match(toHtml(r, 'fr'), /Comment corriger/);
+  assert.doesNotMatch(toHtml(r, 'en'), /Ask AI/);
+  assert.match(toHtml(r, 'en', { ai: true, aiEndpoint: '/api/ask/x' }), /Ask AI how to fix this/);
+  // standards: only the chosen ones are reported, and all rules for them are run
+  const only = await scan({ urls: [`${base}/bad.html`], standards: ['aoda'], executablePath });
+  assert.deepEqual(only.frameworks.map((f) => f.id), ['aoda']);
   assert.match(toMarkdown(r), /Canadian frameworks/);
 });
 

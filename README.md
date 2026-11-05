@@ -1,15 +1,15 @@
-# 🍁 Canada Accessibility Scanner (`ca11y`)
+# Canada Accessibility Scanner (`ca11y`)
 
 An automated website accessibility scanner built on [axe-core](https://github.com/dequelabs/axe-core) and Playwright that maps every finding to **Canadian accessibility requirements**:
 
-| Profile | Framework | Technical standard |
+| Standard id | Framework | Technical standard |
 |---|---|---|
-| `aca` *(default)* | **Accessible Canada Act**: CAN/ASC-EN 301 549:2024, clause 9 | WCAG 2.1 AA |
+| `aca` | **Accessible Canada Act**: CAN/ASC-EN 301 549:2024, clause 9 | WCAG 2.1 AA |
 | `aoda` | **Ontario AODA**: IASR O. Reg. 191/11, s.14 | WCAG 2.0 AA (excl. 1.2.4 live captions & 1.2.5 audio description) |
 | `quebec` | **Québec**: SGQRI 008 2.0 | WCAG 2.0 AA |
 | `wcag22` | WCAG 2.2 AA (future-proofing) | WCAG 2.2 AA |
 
-Every report shows results against **all four frameworks**, so you can see your ACA, AODA and Québec status from one scan. For ACA, each failure also shows the matching EN 301 549 clause (e.g. WCAG 1.4.3 → clause 9.1.4.3).
+By default one scan checks **all four**, and the report shows pass/fail for each. You can also pick only the ones you need. For ACA, each failure also shows the matching EN 301 549 clause (e.g. WCAG 1.4.3 → clause 9.1.4.3).
 
 ### Canada-specific checks (beyond axe-core)
 
@@ -42,7 +42,8 @@ npx playwright install chromium
 **Command line:**
 
 ```bash
-npx ca11y scan https://www.example.ca --max-pages 10 --profile aca
+npx ca11y scan https://www.example.ca --max-pages 10
+npx ca11y scan https://www.example.ca --standards aca,aoda
 ```
 
 Reports land in `a11y-report/` (`report.html`, `report.json`, `report.md`).
@@ -59,7 +60,7 @@ Then open http://localhost:3000, enter a URL, choose a profile and run the scan.
 
 ```
 ca11y scan <url...> [options]
-  -p, --profile <id>      aca | aoda | quebec | wcag22   (default: aca)
+  -s, --standards <list>  aca,aoda,quebec,wcag22   (default: all four)
   -m, --max-pages <n>     Crawl same-site links up to n pages (default: 1)
   -o, --out <dir>         Output directory (default: a11y-report)
   -f, --format <list>     html,json,md
@@ -89,7 +90,7 @@ It also runs weekly. To choose which sites it scans, set a repository variable *
 - uses: YOUR-USERNAME/canada-a11y-scanner@v1
   with:
     urls: https://staging.example.ca
-    profile: aca          # aca | aoda | quebec | wcag22
+    standards: aca,aoda   # any of aca, aoda, quebec, wcag22 (default: all)
     max-pages: 20
     fail-on: serious      # fail the build on serious/critical issues
     report-lang: en       # or fr
@@ -105,6 +106,20 @@ docker run -p 3000:3000 ca11y
 ```
 
 The image works on any container host (Render, Fly.io, Cloud Run, Azure, etc.). The web UI runs one scan at a time. If you expose it publicly, put authentication in front of it, because it fetches any URL it's given.
+
+### 4. Optional: AI "how to fix" helper
+Every report already includes free, built-in **How to fix** steps (English and French) for common problems.
+
+You can also add an **Ask AI how to fix this** button to each problem in the web app. It uses Claude and **costs money per question**, so it stays off until you add a key:
+
+| Setting (environment variable) | What it does | Default |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Your Claude API key from console.anthropic.com. Turns the button on. | not set (AI off) |
+| `AI_MODEL` | Which Claude model answers | `claude-opus-5-5` |
+| `AI_DAILY_LIMIT` | Most AI questions per day for the whole site | `50` |
+| `AI_HOURLY_LIMIT_PER_VISITOR` | Most AI questions per visitor per hour | `10` |
+
+On Render: **your service → Environment → Add Environment Variable**. Set a spending limit in the Anthropic console as well. To spend less per question, set `AI_MODEL` to `claude-haiku-5-5`.
 
 ---
 
@@ -123,6 +138,8 @@ src/scanner.js         Playwright crawler + axe-core runner + scoring
 src/canada-checks.js   Official-languages / ACA / AODA checks
 src/standards.js       WCAG criteria → Canadian framework mapping
 src/report.js          HTML (EN/FR) and Markdown reports
+src/fixes.js           Built-in plain-language fix steps (EN/FR)
+src/ai.js              Optional AI helper (Claude API)
 src/server.js          Local web interface
 action.yml             Reusable GitHub Action
 ```

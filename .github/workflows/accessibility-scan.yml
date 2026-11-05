@@ -1,5 +1,5 @@
 # Scan any website on demand (Actions tab → "Accessibility scan" → Run workflow)
-# and on a weekly schedule. Set the repository variable A11Y_URLS to monitor your own site.
+# and on a weekly schedule. Edit SCHEDULED_URLS to monitor your own site.
 name: Accessibility scan
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ on:
         description: 'URL(s) to scan (space separated)'
         required: true
         default: 'https://www.example.ca'
-      profile:
-        description: 'Compliance profile'
+      standards:
+        description: 'Standards to check'
         type: choice
-        options: [aca, aoda, quebec, wcag22]
-        default: aca
+        options: ['all', aca, aoda, quebec, wcag22]
+        default: 'all'
       max-pages:
         description: 'Max pages to crawl'
         default: '10'
@@ -40,7 +40,7 @@ jobs:
       - uses: ./
         with:
           urls: ${{ inputs.urls || env.SCHEDULED_URLS }}
-          profile: ${{ inputs.profile || 'aca' }}
+          standards: ${{ (inputs.standards == '' || inputs.standards == 'all') && 'aca,aoda,quebec,wcag22' || inputs.standards }}
           max-pages: ${{ inputs.max-pages || '10' }}
           report-lang: ${{ inputs.report-lang || 'en' }}
           fail-on: ${{ inputs.fail-on || 'none' }}

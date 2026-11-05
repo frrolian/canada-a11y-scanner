@@ -1,0 +1,33 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+
+  action-self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Serve test fixtures
+        run: (cd test/fixtures && python3 -m http.server 8080 &) && sleep 1
+      - name: Scan fixtures with the action
+        id: a11y
+        uses: ./
+        with:
+          urls: http://127.0.0.1:8080/good.html
+          max-pages: 1
+          fail-on: serious
+      - run: echo "Score ${{ steps.a11y.outputs.score }}, violations ${{ steps.a11y.outputs.violations }}"
